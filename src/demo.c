@@ -6,25 +6,17 @@
  */
 
 #include <stdio.h>
+#include "foo.h"
 #include "miniprof.h"
 
-int function1 (void) {
-  return 0;
-}
-
-int function2 (void) {
-  return function1 () + 1;
-}
-
-int function3 (void) {
-  return function2 () + 1;
-}
-
 int main (void) {
-  //printf ("Logfile: %s\n", cygprofile_getfilename ());
-  miniprof_enable();
-  function3();
-  miniprof_disable();
-  function3();
-  return 0;
+	miniprof_init(10);
+	miniprof_enable();
+	function3();
+	miniprof_disable();
+	function3();
+	miniprof_dump_events();
+	miniprof_close();
+	printf("maxdepth=%d\n", miniprof_maxdepth());
+	return 0;
 }

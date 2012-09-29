@@ -21,8 +21,10 @@ void __cyg_profile_func_exit (void *this_fn, void *call_site)
 
 void miniprof_enable(void) __attribute__ ((no_instrument_function));
 void miniprof_disable(void) __attribute__ ((no_instrument_function));
-
 struct timespec diffts(struct timespec *start, struct timespec *end);
+int miniprof_maxdepth(void);
+int miniprof_init(int maxev);
+void miniprof_close();
 
 #ifdef __cplusplus
 };
@@ -30,9 +32,10 @@ struct timespec diffts(struct timespec *start, struct timespec *end);
 
 #define FN_ENTRY 1
 #define FN_EXIT 0
+#define MINIPROF_DEFAULT_NUMEVENTS
 
 struct mp_ev {
-	unsigned long 	entry;
+	unsigned long 	depth;
 	void 			*this_fn;
 	void 			*call_site;
 	struct timespec	ts;
