@@ -94,24 +94,27 @@ int miniprof_maxdepth() {
 	return maxdepth;
 }
 
+static inline const char *symname(void *addr) {
+	Dl_info sym;
+	int ret = dladdr(addr, &sym);
+	return (ret != 0) ? sym.dli_sname: NULL;
+}
+
 void miniprof_dump_events() {
 	int i;
 	int curr = pos;
 	int max = 0;
-	Dl_info sym;
+	const char *fname;
 
 	fprintf(stdout, "  %-5s %-10s %-10s %10s %10s %s\n",
 			"depth", "thisfn", "callsite", "sec", "nsec", "symname");
 	for (i = 0; i < numev; i++) {
 		struct mp_ev *ev = &ringbuffer[curr];
 		if (ev->ts.tv_sec != 0) {
-			int ret = dladdr(ev->this_fn, &sym);
-			const char *symname = NULL;
-			if (ret != 0)
-				symname = sym.dli_sname;
+			fname = symname(ev->this_fn);
 			fprintf(stdout, "- %5ld 0x%-8p 0x%-8p %10ld %10ld %s\n",
 					ev->depth, ev->this_fn, ev->call_site,
-					ev->ts.tv_sec, ev->ts.tv_nsec, symname);
+					ev->ts.tv_sec, ev->ts.tv_nsec, fname);
 			if (ev->depth > max)
 				max = ev->depth;
 		}
