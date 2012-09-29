@@ -6,7 +6,7 @@ AM_INIT_AUTOMAKE([color-tests])
 
 LT_INIT
 
-AC_CHECK_HEADERS(sys/types.h unistd.h fcntl.h strings.h pthread.h time.h errno.h stdarg.h limits.h signal.h stdlib.h)
+AC_CHECK_HEADERS(sys/types.h unistd.h fcntl.h strings.h pthread.h time.h errno.h stdarg.h limits.h signal.h stdlib.h time.h)
 AC_CHECK_HEADERS(inttypes.h math.h)
 AC_CHECK_LIB(pthread, pthread_create)
 
