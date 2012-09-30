@@ -44,7 +44,12 @@ void print_fqueue_entry(gpointer data, gpointer userdata) {
 	*depth = *depth + 1;
 }
 
-void sym_print_entry(gpointer key, gpointer val, gpointer data) {
+void miniprof_print_symtable_header() {
+	printf("%10s %10s %10s %10s %10s %10s %10s %s\n",
+				"addr", "total", "children", "self", "min", "max", "count", "fname");
+}
+
+void sym_print_entry_full(gpointer key, gpointer val, gpointer data) {
 	struct mp_stat *stat = (struct mp_stat *) val;
 	double self = 0.0;
 	if (stat->total > stat->children)
@@ -53,10 +58,14 @@ void sym_print_entry(gpointer key, gpointer val, gpointer data) {
 			self, stat->min, stat->max, stat->count, stat->fname);
 }
 
+void sym_print_entry(gpointer val, gpointer data) {
+	struct mp_stat *stat = (struct mp_stat *) val;
+	sym_print_entry_full((gpointer)stat->addr, stat, NULL);
+}
+
 void miniprof_print_symtable() {
-	printf("%10s %10s %10s %10s %10s %10s %10s %s\n",
-			"addr", "total", "children", "self", "min", "max", "count", "fname");
-	g_hash_table_foreach(symtable, sym_print_entry, NULL);
+	miniprof_print_symtable_header();
+	g_hash_table_foreach(symtable, sym_print_entry_full, NULL);
 }
 
 void miniprof_print_queue(GQueue *queue) {
@@ -329,6 +338,36 @@ static inline struct mp_ev *get_ev(int idx) {
 	return ev;
 }
 
+// sort by decreasing order
+gint stat_compare(gconstpointer a, gconstpointer b, gpointer data) {
+	struct mp_stat *self  = (struct mp_stat *) a;
+	struct mp_stat *other = (struct mp_stat *) b;
+	if (self->total > other->total)
+		return -1;
+	if (self->total < other->total)
+		return 1;
+	return 0;
+}
+
+void sym_sort_entry(gpointer key, gpointer val, gpointer data) {
+	struct mp_stat *stat = (struct mp_stat *) val;
+	GSequence *seq = (GSequence *) data;
+	g_sequence_insert_sorted(seq, stat, stat_compare, NULL);
+}
+
+void print_report() {
+	// sort symtable values using GSequence
+	GSequence *seq = g_sequence_new(NULL);
+	g_hash_table_foreach(symtable, sym_sort_entry, seq);
+
+	// display results
+	miniprof_print_symtable_header();
+	g_sequence_foreach(seq, sym_print_entry, NULL);
+
+	// cleanup
+	g_sequence_free(seq);
+}
+
 void miniprof_report() {
 	int i, top;
 	struct mp_ev *ev, *parent, *sibling;
@@ -360,6 +399,7 @@ void miniprof_report() {
 			if (stat == NULL)
 				goto done;
 			stat->fname = fname;
+			stat->addr = (unsigned long) ev->this_fn;
 			g_hash_table_insert(symtable, ev->this_fn, stat);
 		}
 
@@ -372,7 +412,7 @@ void miniprof_report() {
 
 			// push current function on the stack
 			g_queue_push_tail(fqueue, GINT_TO_POINTER(idx));
-			printf("push %d\n", idx);
+			//printf("push %d\n", idx);
 		} else {
 			// compute time inside this function
 			assert(!g_queue_is_empty(fqueue));
@@ -382,7 +422,7 @@ void miniprof_report() {
 			assert(stat != NULL);
 			delta = diffts(&sibling->ts, &ev->ts);
 			time = convert_ts(&delta, TS_USEC);
-			stat->total = time;
+			stat->total += time;
 
 			// update min: use flag to avoid bootstrap float comparison
 			if (!stat->min_is_set) {
@@ -399,8 +439,8 @@ void miniprof_report() {
 
 			// remove self to parent
 			if (!g_queue_is_empty(fqueue)) {
-				printf("add children time to parent\n");
-				miniprof_print_queue(fqueue);
+				//printf("add children time to parent\n");
+				//miniprof_print_queue(fqueue);
 				top = GPOINTER_TO_INT(g_queue_peek_tail(fqueue));
 				parent = get_ev(top);
 				stat = g_hash_table_lookup(symtable, parent->this_fn);
@@ -408,15 +448,16 @@ void miniprof_report() {
 				stat->children += time;
 			}
 
-			printf("pop  %d\n", top);
+			//printf("pop  %d\n", top);
 		}
 
 		// advance
 		idx = (idx + 1) % numev;
 	}
 	assert(g_queue_is_empty(fqueue));
+	print_report();
 done:
-	miniprof_print_queue(fqueue);
+	//miniprof_print_queue(fqueue);
 	g_queue_free(fqueue);
 	fqueue = NULL;
 }

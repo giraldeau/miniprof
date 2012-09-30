@@ -25,6 +25,7 @@ struct mp_ev {
 struct mp_stat {
 	char min_is_set;
 	const char *fname;
+	unsigned long addr;
 	int count;
 	double total;
 	double children;
