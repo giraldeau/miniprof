@@ -13,7 +13,7 @@ int main (void) {
 	int i;
 	miniprof_init(10);
 	miniprof_enable();
-	for (i = 0; i < 10; i++)
+	//for (i = 0; i < 10; i++)
 		function3();
 	miniprof_disable();
 	function3();

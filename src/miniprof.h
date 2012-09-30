@@ -50,9 +50,8 @@ void miniprof_dump_events(void);
 void miniprof_save(const char *filename);
 void miniprof_report(void);
 void miniprof_print_symtable(void);
-static inline struct mp_ev *get_ev(int idx);
 void miniprof_dump_event_header(void);
-void miniprof_dump_event(struct mp_ev *ev, const char *fname);
+void miniprof_dump_event(struct mp_ev *ev, const char *fname, struct timespec *diff);
 #ifdef __cplusplus
 };
 #endif

@@ -20,6 +20,8 @@ static struct mp_ev *ringbuffer = NULL;
 GHashTable *symtable = NULL;
 GQueue *fqueue = NULL;
 
+static inline struct mp_ev *get_ev(int idx);
+
 /*
  * HashTable related functions
  */
@@ -38,7 +40,7 @@ void print_fqueue_entry(gpointer data, gpointer userdata) {
 	int idx = GPOINTER_TO_INT(data);
 	int *depth = (int *) userdata;
 	printf("%8d %6d ", *depth, idx);
-	miniprof_dump_event(get_ev(idx), NULL);
+	miniprof_dump_event(get_ev(idx), NULL, NULL);
 	*depth = *depth + 1;
 }
 
@@ -164,7 +166,7 @@ static inline void __miniprof_event(unsigned long entry, void *this_fn, void *ca
 	ringbuffer[pos].ts			= ts;
 
 	if (debug)
-		miniprof_dump_event(get_ev(pos), NULL);
+		miniprof_dump_event(get_ev(pos), NULL, NULL);
 
 	pos = (pos + 1) % numev;
 
@@ -269,30 +271,36 @@ static inline char const *symname(void *addr) {
  */
 
 void miniprof_dump_event_header() {
-	fprintf(stdout, "%s %-5s %-10s %-10s %10s %10s %s\n",
-			"e", "depth", "thisfn", "callsite", "sec", "nsec", "symname");
+	fprintf(stdout, "%s %-5s %-8s %-8s %10s %10s %15s %s\n",
+			"e", "depth", "thisfn", "callsite", "sec", "nsec", "delta", "symname");
 }
 
-void miniprof_dump_event(struct mp_ev *ev, const char *fname) {
-	fprintf(stdout, "%d %5d 0x%-8p 0x%-8p %10ld %10ld %s\n",
+void miniprof_dump_event(struct mp_ev *ev, const char *fname, struct timespec *diff) {
+	fprintf(stdout, "%d %5d %-8p %-8p %10ld %10ld %15.3f %s\n",
 			ev->entry, ev->depth, ev->this_fn, ev->call_site,
-			ev->ts.tv_sec, ev->ts.tv_nsec, fname);
+			ev->ts.tv_sec, ev->ts.tv_nsec, convert_ts(diff, TS_USEC), fname);
 }
 
 void miniprof_dump_events() {
 	int i;
-	int curr = pos;
+	int idx = (evcount >= numev) ? pos : 0;
+	int len = (evcount >= numev) ? numev : evcount;
 	int max = 0;
 	const char *fname;
+	struct mp_ev *curr, *prev = NULL;
+	struct timespec diff;
 
 	miniprof_dump_event_header();
-	for (i = 0; i < numev; i++) {
-		struct mp_ev *ev = get_ev(curr);
-		fname = symname(ev->this_fn);
-		miniprof_dump_event(ev, fname);
-		if (ev->depth > max)
-			max = ev->depth;
-		curr = (curr + 1) % numev;
+	prev = get_ev(idx);
+	for (i = 0; i < len; i++) {
+		curr = get_ev(idx);
+		diff = diffts(&prev->ts, &curr->ts);
+		fname = symname(curr->this_fn);
+		miniprof_dump_event(curr, fname, &diff);
+		if (curr->depth > max)
+			max = curr->depth;
+		idx = (idx + 1) % numev;
+		prev = curr;
 	}
 	printf("maxdepth=%d\n", max);
 }
