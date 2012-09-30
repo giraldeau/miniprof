@@ -20,7 +20,7 @@ int main (void) {
 	miniprof_dump_events();
 	miniprof_save("miniprof.out");
 	miniprof_report();
+	miniprof_print_symtable();
 	miniprof_close();
-	printf("maxdepth=%d\n", miniprof_maxdepth());
 	return 0;
 }
