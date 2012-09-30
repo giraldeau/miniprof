@@ -1,0 +1,21 @@
+Miniprof 0.0.1
+==============
+
+Miniprof is a small function profiler designed for predictable low-latency
+operation. It aims to help profiling in a real-time environment.  Here are
+design features:
+
+ * Uses -function-instrument feature of GCC
+ * Pre-allocate ringbuffer to avoid malloc() in the fast path
+ * Use clock_gettime(CLOCK_MONOTONIC_RAW) to have precise and
+   fast nanosecond timestamp across cores
+ * Enable, disable and reset at runtime
+
+The current implementation is not thread-safe. It means that if multiple
+threads executes instrumented functions while tracing is enabled, then behavior
+is undefined.
+
+See src/demo.c and src/Makefile.am for operation and linking options.
+
+Have fun!
+
