@@ -25,6 +25,8 @@ struct timespec diffts(struct timespec *start, struct timespec *end);
 int miniprof_maxdepth(void);
 int miniprof_init(int maxev);
 void miniprof_close();
+void miniprof_dump_events(void);
+void miniprof_save(const char *filename);
 
 #ifdef __cplusplus
 };
@@ -35,10 +37,11 @@ void miniprof_close();
 #define MINIPROF_DEFAULT_NUMEVENTS
 
 struct mp_ev {
-	unsigned long 	depth;
+	struct timespec	ts;
 	void 			*this_fn;
 	void 			*call_site;
-	struct timespec	ts;
+	unsigned char 	depth;
+	unsigned char	entry;
 };
 
 #endif /* MINIPROF_H_ */

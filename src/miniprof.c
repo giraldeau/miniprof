@@ -10,6 +10,7 @@ static int level = 0;
 static int enabled = 0;
 static int maxdepth = 0;
 static int debug = 0;
+static int evcount = 0;
 static int pos;
 static int numev;
 
@@ -43,6 +44,7 @@ static inline void __miniprof_event(unsigned long entry, void *this_fn, void *ca
 		fprintf(stdout, "- %d %p %p %ld %ld\n", level, this_fn, call_site, ts.tv_sec, ts.tv_nsec);
 	if (ringbuffer != NULL) {
 		ringbuffer[pos].depth		= level;
+		ringbuffer[pos].entry		= entry;
 		ringbuffer[pos].this_fn		= this_fn;
 		ringbuffer[pos].call_site	= call_site;
 		ringbuffer[pos].ts			= ts;
@@ -52,6 +54,7 @@ static inline void __miniprof_event(unsigned long entry, void *this_fn, void *ca
 		level++;
 	if (level > maxdepth)
 		maxdepth = level;
+	evcount++;
 }
 
 void __cyg_profile_func_enter (void *this_fn, void *call_site)
@@ -65,14 +68,36 @@ void __cyg_profile_func_exit (void *this_fn, void *call_site)
 }
 
 int miniprof_init(int size) {
+	if (size <= 0)
+		return -1;
 	if (ringbuffer != NULL)
 		miniprof_close();
 	numev = size;
 	pos = 0;
+	evcount = 0;
 	ringbuffer = calloc(sizeof(struct mp_ev), size);
 	if (ringbuffer == NULL)
 		return -1;
 	return 0;
+}
+
+void miniprof_save(const char *filename) {
+	int i;
+	size_t ret;
+	int idx = (evcount >= numev) ? pos : 0;
+	int len = (evcount >= numev) ? numev : evcount;
+
+	FILE *f = fopen(filename, "w");
+	fwrite(&len, sizeof(int), 1, f);
+	for (i = 0; i < len; i++) {
+		ret = fwrite(&ringbuffer[idx], sizeof(struct mp_ev), 1, f);
+		if (ret != 1) {
+			fprintf(stderr, "ERROR: partial buffer save ret=%ld\n", ret);
+			break;
+		}
+		idx = (idx + 1) % len;
+	}
+	fclose(f);
 }
 
 void miniprof_close() {
@@ -106,14 +131,14 @@ void miniprof_dump_events() {
 	int max = 0;
 	const char *fname;
 
-	fprintf(stdout, "  %-5s %-10s %-10s %10s %10s %s\n",
-			"depth", "thisfn", "callsite", "sec", "nsec", "symname");
+	fprintf(stdout, "%s %-5s %-10s %-10s %10s %10s %s\n",
+			"e", "depth", "thisfn", "callsite", "sec", "nsec", "symname");
 	for (i = 0; i < numev; i++) {
 		struct mp_ev *ev = &ringbuffer[curr];
 		if (ev->ts.tv_sec != 0) {
 			fname = symname(ev->this_fn);
-			fprintf(stdout, "- %5ld 0x%-8p 0x%-8p %10ld %10ld %s\n",
-					ev->depth, ev->this_fn, ev->call_site,
+			fprintf(stdout, "%d %5d 0x%-8p 0x%-8p %10ld %10ld %s\n",
+					ev->entry, ev->depth, ev->this_fn, ev->call_site,
 					ev->ts.tv_sec, ev->ts.tv_nsec, fname);
 			if (ev->depth > max)
 				max = ev->depth;
@@ -122,3 +147,5 @@ void miniprof_dump_events() {
 	}
 	printf("max=%d\n", max);
 }
+
+

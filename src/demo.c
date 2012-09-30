@@ -10,12 +10,15 @@
 #include "miniprof.h"
 
 int main (void) {
+	int i;
 	miniprof_init(10);
 	miniprof_enable();
-	function3();
+	for (i = 0; i < 10; i++)
+		function3();
 	miniprof_disable();
 	function3();
 	miniprof_dump_events();
+	miniprof_save("miniprof.out");
 	miniprof_close();
 	printf("maxdepth=%d\n", miniprof_maxdepth());
 	return 0;
