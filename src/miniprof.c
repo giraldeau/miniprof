@@ -172,9 +172,10 @@ void miniprof_report() {
 	for (i = 0; i < numev; i++) {
 		struct mp_ev *ev = &ringbuffer[curr];
 		if (ev->ts.tv_sec != 0) {
-			fname = symname(ev->this_fn);
-			if (!g_hash_table_contains(symtable, ev->this_fn))
+			if (!g_hash_table_contains(symtable, ev->this_fn)) {
+				fname = symname(ev->this_fn);
 				g_hash_table_insert(symtable, ev->this_fn, (char *)fname);
+			}
 		}
 		curr = (curr + 1) % numev;
 	}
