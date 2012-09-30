@@ -120,10 +120,12 @@ int miniprof_maxdepth() {
 	return maxdepth;
 }
 
-static inline const char *symname(void *addr) {
+static inline char const *symname(void *addr) {
 	Dl_info sym;
 	int ret = dladdr(addr, &sym);
-	return (ret != 0) ? sym.dli_sname: NULL;
+	if (ret != 0)
+		return sym.dli_sname;
+	return NULL;
 }
 
 void miniprof_dump_events() {
@@ -149,4 +151,33 @@ void miniprof_dump_events() {
 	printf("max=%d\n", max);
 }
 
+gboolean sym_equal_func(gconstpointer a, gconstpointer b) {
+	if (a == b)
+		return TRUE;
+	if (a == NULL || b == NULL)
+		return FALSE;
+	if (*(unsigned long *)a == *(unsigned long *)b)
+		return TRUE;
+	return FALSE;
+}
 
+void sym_print_entry(gpointer key, gpointer val, gpointer data) {
+	printf("0x%p %s\n", (unsigned long *)key, (const char *) val);
+}
+
+void miniprof_report() {
+	GHashTable *symtable = g_hash_table_new(g_direct_hash, sym_equal_func);
+	int i, curr = 0;
+	const char *fname;
+	for (i = 0; i < numev; i++) {
+		struct mp_ev *ev = &ringbuffer[curr];
+		if (ev->ts.tv_sec != 0) {
+			fname = symname(ev->this_fn);
+			if (!g_hash_table_contains(symtable, ev->this_fn))
+				g_hash_table_insert(symtable, ev->this_fn, (char *)fname);
+		}
+		curr = (curr + 1) % numev;
+	}
+	g_hash_table_foreach(symtable, sym_print_entry, NULL);
+	g_hash_table_destroy(symtable);
+}

@@ -27,7 +27,7 @@ int miniprof_init(int maxev);
 void miniprof_close();
 void miniprof_dump_events(void);
 void miniprof_save(const char *filename);
-
+void miniprof_report();
 #ifdef __cplusplus
 };
 #endif
@@ -42,6 +42,12 @@ struct mp_ev {
 	void 			*call_site;
 	unsigned char 	depth;
 	unsigned char	entry;
+};
+
+struct mp_stat {
+	double total;
+	double self;
+	int count;
 };
 
 #endif /* MINIPROF_H_ */
