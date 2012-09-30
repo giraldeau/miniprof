@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <dlfcn.h>
+#include <glib.h>
 
 #include "miniprof.h"
 

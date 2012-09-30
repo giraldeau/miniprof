@@ -24,6 +24,9 @@ else
     CFLAGS="-Wall -O3 -fomit-frame-pointer"
 fi
 
+pkg_glib="glib-2.0 >= 2.0.0"
+PKG_CHECK_MODULES(GLIB, [$pkg_glib])
+
 # be silent by default
 AM_SILENT_RULES([yes])
 
