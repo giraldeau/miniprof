@@ -10,6 +10,27 @@
 
 #include <time.h>
 
+#define FN_ENTRY 1
+#define FN_EXIT 0
+#define MINIPROF_DEFAULT_NUMEVENTS
+
+struct mp_ev {
+	struct timespec	ts;
+	void 			*this_fn;
+	void 			*call_site;
+	unsigned char 	depth;
+	unsigned char	entry;
+};
+
+struct mp_stat {
+	const char *fname;
+	int count;
+	double total;
+	double self;
+	double min;
+	double max;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,26 +50,11 @@ void miniprof_dump_events(void);
 void miniprof_save(const char *filename);
 void miniprof_report(void);
 void miniprof_print_symtable(void);
+static inline struct mp_ev *get_ev(int idx);
+void miniprof_dump_event_header(void);
+void miniprof_dump_event(struct mp_ev *ev, const char *fname);
 #ifdef __cplusplus
 };
 #endif
-
-#define FN_ENTRY 1
-#define FN_EXIT 0
-#define MINIPROF_DEFAULT_NUMEVENTS
-
-struct mp_ev {
-	struct timespec	ts;
-	void 			*this_fn;
-	void 			*call_site;
-	unsigned char 	depth;
-	unsigned char	entry;
-};
-
-struct mp_stat {
-	double total;
-	double self;
-	int count;
-};
 
 #endif /* MINIPROF_H_ */

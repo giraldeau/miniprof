@@ -18,6 +18,7 @@ static int numev;
 
 static struct mp_ev *ringbuffer = NULL;
 GHashTable *symtable = NULL;
+GQueue *fqueue = NULL;
 
 /*
  * HashTable related functions
@@ -33,12 +34,33 @@ gboolean sym_equal_func(gconstpointer a, gconstpointer b) {
 	return FALSE;
 }
 
+void print_fqueue_entry(gpointer data, gpointer userdata) {
+	int idx = GPOINTER_TO_INT(data);
+	int *depth = (int *) userdata;
+	printf("%8d %6d ", *depth, idx);
+	miniprof_dump_event(get_ev(idx), NULL);
+	*depth = *depth + 1;
+}
+
 void sym_print_entry(gpointer key, gpointer val, gpointer data) {
-	printf("0x%p %s\n", (unsigned long *)key, (const char *) val);
+	struct mp_stat *stat = (struct mp_stat *) val;
+	printf("%10p %10d %s\n", key, stat->count, stat->fname);
 }
 
 void miniprof_print_symtable() {
+	printf("%10s %10s %s\n", "addr", "count", "fname");
 	g_hash_table_foreach(symtable, sym_print_entry, NULL);
+}
+
+void miniprof_print_queue(GQueue *queue) {
+	int depth = 0;
+	if (g_queue_is_empty(queue)) {
+		printf("queue is empty\n");
+		return;
+	}
+	printf("%8s %6s ", "depth", "idx");
+	miniprof_dump_event_header();
+	g_queue_foreach(fqueue, print_fqueue_entry, &depth);
 }
 
 /*
@@ -81,6 +103,45 @@ struct timespec addts(struct timespec *t1, struct timespec *t2) {
 	return sum;
 }
 
+enum timescale {
+	TS_NSEC, TS_USEC, TS_MSEC, TS_SSEC
+};
+
+#define TS_SCALE_NSEC 1000000000.0
+#define TS_SCALE_USEC 1000000.0
+#define TS_SCALE_MSEC 1000.0
+#define TS_SCALE_SSEC 1.0
+
+double convert_ts(struct timespec *t, int timescale) {
+	if (t == NULL)
+		return 0.0;
+	double factor_sec = 0.0;
+	double factor_nsec = 0.0;
+	switch(timescale) {
+		case TS_NSEC:
+			factor_sec = TS_SCALE_NSEC;
+			factor_nsec = TS_SCALE_SSEC;
+			break;
+		case TS_USEC:
+			factor_sec = TS_SCALE_USEC;
+			factor_nsec = TS_SCALE_MSEC;
+			break;
+		case TS_MSEC:
+			factor_sec = TS_SCALE_MSEC;
+			factor_nsec = TS_SCALE_USEC;
+			break;
+		case TS_SSEC:
+			factor_sec = TS_SCALE_SSEC;
+			factor_nsec = TS_SCALE_NSEC;
+			break;
+		default:
+			break;
+	}
+	double time = ((double) t->tv_sec) * factor_sec;
+	time += t->tv_nsec / factor_nsec;
+	return time;
+}
+
 /*
  * Core tracing functions
  */
@@ -88,23 +149,27 @@ struct timespec addts(struct timespec *t1, struct timespec *t2) {
 static inline void __miniprof_event(unsigned long entry, void *this_fn, void *call_site)
 {
 	struct timespec ts;
+
 	if(!enabled)
 		return;
-	if (!entry)
-		level--;
+
+	if (ringbuffer == NULL)
+		return;
+
 	clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+	ringbuffer[pos].depth		= level;
+	ringbuffer[pos].entry		= entry;
+	ringbuffer[pos].this_fn		= this_fn;
+	ringbuffer[pos].call_site	= call_site;
+	ringbuffer[pos].ts			= ts;
+
 	if (debug)
-		fprintf(stdout, "- %d %p %p %ld %ld\n", level, this_fn, call_site, ts.tv_sec, ts.tv_nsec);
-	if (ringbuffer != NULL) {
-		ringbuffer[pos].depth		= level;
-		ringbuffer[pos].entry		= entry;
-		ringbuffer[pos].this_fn		= this_fn;
-		ringbuffer[pos].call_site	= call_site;
-		ringbuffer[pos].ts			= ts;
-		pos = (pos + 1) % numev;
-	}
-	if (entry)
-		level++;
+		miniprof_dump_event(get_ev(pos), NULL);
+
+	pos = (pos + 1) % numev;
+
+	if (entry) level++;
+	else level--;
 	if (level > maxdepth)
 		maxdepth = level;
 	evcount++;
@@ -203,48 +268,105 @@ static inline char const *symname(void *addr) {
  * Display and reporting functions
  */
 
+void miniprof_dump_event_header() {
+	fprintf(stdout, "%s %-5s %-10s %-10s %10s %10s %s\n",
+			"e", "depth", "thisfn", "callsite", "sec", "nsec", "symname");
+}
+
+void miniprof_dump_event(struct mp_ev *ev, const char *fname) {
+	fprintf(stdout, "%d %5d 0x%-8p 0x%-8p %10ld %10ld %s\n",
+			ev->entry, ev->depth, ev->this_fn, ev->call_site,
+			ev->ts.tv_sec, ev->ts.tv_nsec, fname);
+}
+
 void miniprof_dump_events() {
 	int i;
 	int curr = pos;
 	int max = 0;
 	const char *fname;
 
-	fprintf(stdout, "%s %-5s %-10s %-10s %10s %10s %s\n",
-			"e", "depth", "thisfn", "callsite", "sec", "nsec", "symname");
+	miniprof_dump_event_header();
 	for (i = 0; i < numev; i++) {
-		struct mp_ev *ev = &ringbuffer[curr];
-		if (ev->ts.tv_sec != 0) {
-			fname = symname(ev->this_fn);
-			fprintf(stdout, "%d %5d 0x%-8p 0x%-8p %10ld %10ld %s\n",
-					ev->entry, ev->depth, ev->this_fn, ev->call_site,
-					ev->ts.tv_sec, ev->ts.tv_nsec, fname);
-			if (ev->depth > max)
-				max = ev->depth;
-		}
+		struct mp_ev *ev = get_ev(curr);
+		fname = symname(ev->this_fn);
+		miniprof_dump_event(ev, fname);
+		if (ev->depth > max)
+			max = ev->depth;
 		curr = (curr + 1) % numev;
 	}
 	printf("maxdepth=%d\n", max);
 }
 
+struct mp_stat *make_mp_stat() {
+	return calloc(sizeof(struct mp_stat), 1);
+}
+
+void free_mp_stat(gpointer data) {
+	free(data);
+}
+
+static inline struct mp_ev *get_ev(int idx) {
+	struct mp_ev *ev = NULL;
+	if (idx >= 0 && idx < numev)
+		ev = &ringbuffer[idx];
+	assert(ev != NULL);
+	return ev;
+}
+
 void miniprof_report() {
-	int i;
-	struct mp_ev *ev;
+	int i, top;
+	struct mp_ev *ev, *parent, *sibling;
+	struct mp_stat *stat;
 	int idx = (evcount >= numev) ? pos : 0;
 	int len = (evcount >= numev) ? numev : evcount;
 
+	fqueue = g_queue_new();
+
 	const char *fname;
-	for (i = 0; i < len; i++) {
-		ev = &ringbuffer[idx];
-		assert(ev->ts.tv_sec != 0);
-
-		// insert function name if required
-		if (!g_hash_table_contains(symtable, ev->this_fn)) {
-			fname = symname(ev->this_fn);
-			g_hash_table_insert(symtable, ev->this_fn, (char *)fname);
-		}
-
-
-		idx = (idx + 1) % numev;
+	/*
+	 * Init queue according to initial depth. This situation
+	 * may occur in case of ringbuffer overwrite
+	 */
+	ev = get_ev(idx);
+	for (i = 0; i < ev->depth; i++) {
+		g_queue_push_tail(fqueue, GINT_TO_POINTER(idx));
 	}
 
+	for (i = 0; i < len; i++) {
+		ev = get_ev(idx);
+
+		// insert function stat entry if required
+		if (!g_hash_table_contains(symtable, ev->this_fn)) {
+			fname = symname(ev->this_fn);
+			stat = make_mp_stat();
+			if (stat == NULL)
+				goto done;
+			stat->fname = fname;
+			g_hash_table_insert(symtable, ev->this_fn, stat);
+		}
+
+		// Process event
+		if (ev->entry) {
+			top = GPOINTER_TO_INT(g_queue_peek_tail(fqueue));
+			parent = get_ev(top);
+			stat = g_hash_table_lookup(symtable, parent->this_fn);
+			assert(stat != NULL);
+			stat->count++;
+			g_queue_push_tail(fqueue, GINT_TO_POINTER(idx));
+			printf("push %d\n", idx);
+		} else {
+			assert(!g_queue_is_empty(fqueue));
+			top = GPOINTER_TO_INT(g_queue_pop_tail(fqueue));
+			sibling = get_ev(top);
+			printf("pop  %d\n", top);
+		}
+
+		// advance
+		idx = (idx + 1) % numev;
+	}
+	assert(g_queue_is_empty(fqueue));
+done:
+	miniprof_print_queue(fqueue);
+	g_queue_free(fqueue);
+	fqueue = NULL;
 }
