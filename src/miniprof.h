@@ -23,10 +23,11 @@ struct mp_ev {
 };
 
 struct mp_stat {
+	char min_is_set;
 	const char *fname;
 	int count;
 	double total;
-	double self;
+	double children;
 	double min;
 	double max;
 };

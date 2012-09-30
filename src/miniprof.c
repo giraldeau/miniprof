@@ -46,11 +46,16 @@ void print_fqueue_entry(gpointer data, gpointer userdata) {
 
 void sym_print_entry(gpointer key, gpointer val, gpointer data) {
 	struct mp_stat *stat = (struct mp_stat *) val;
-	printf("%10p %10d %s\n", key, stat->count, stat->fname);
+	double self = 0.0;
+	if (stat->total > stat->children)
+		self = stat->total - stat->children;
+	printf("%10p %10.3f %10.3f %10.3f %10.3f %10.3f %10d %s\n", key, stat->total, stat->children,
+			self, stat->min, stat->max, stat->count, stat->fname);
 }
 
 void miniprof_print_symtable() {
-	printf("%10s %10s %s\n", "addr", "count", "fname");
+	printf("%10s %10s %10s %10s %10s %10s %10s %s\n",
+			"addr", "total", "children", "self", "min", "max", "count", "fname");
 	g_hash_table_foreach(symtable, sym_print_entry, NULL);
 }
 
@@ -306,7 +311,10 @@ void miniprof_dump_events() {
 }
 
 struct mp_stat *make_mp_stat() {
-	return calloc(sizeof(struct mp_stat), 1);
+	struct mp_stat *stat = calloc(sizeof(struct mp_stat), 1);
+	if (stat == NULL)
+		return NULL;
+	return stat;
 }
 
 void free_mp_stat(gpointer data) {
@@ -327,19 +335,21 @@ void miniprof_report() {
 	struct mp_stat *stat;
 	int idx = (evcount >= numev) ? pos : 0;
 	int len = (evcount >= numev) ? numev : evcount;
-
-	fqueue = g_queue_new();
-
+	struct timespec delta;
+	double time;
 	const char *fname;
+
 	/*
 	 * Init queue according to initial depth. This situation
 	 * may occur in case of ringbuffer overwrite
 	 */
+	fqueue = g_queue_new();
 	ev = get_ev(idx);
 	for (i = 0; i < ev->depth; i++) {
 		g_queue_push_tail(fqueue, GINT_TO_POINTER(idx));
 	}
 
+	// event processing loop
 	for (i = 0; i < len; i++) {
 		ev = get_ev(idx);
 
@@ -353,19 +363,51 @@ void miniprof_report() {
 			g_hash_table_insert(symtable, ev->this_fn, stat);
 		}
 
-		// Process event
+		// process one event
 		if (ev->entry) {
-			top = GPOINTER_TO_INT(g_queue_peek_tail(fqueue));
-			parent = get_ev(top);
-			stat = g_hash_table_lookup(symtable, parent->this_fn);
+			// update count
+			stat = g_hash_table_lookup(symtable, ev->this_fn);
 			assert(stat != NULL);
 			stat->count++;
+
+			// push current function on the stack
 			g_queue_push_tail(fqueue, GINT_TO_POINTER(idx));
 			printf("push %d\n", idx);
 		} else {
+			// compute time inside this function
 			assert(!g_queue_is_empty(fqueue));
 			top = GPOINTER_TO_INT(g_queue_pop_tail(fqueue));
 			sibling = get_ev(top);
+			stat = g_hash_table_lookup(symtable, sibling->this_fn);
+			assert(stat != NULL);
+			delta = diffts(&sibling->ts, &ev->ts);
+			time = convert_ts(&delta, TS_USEC);
+			stat->total = time;
+
+			// update min: use flag to avoid bootstrap float comparison
+			if (!stat->min_is_set) {
+				stat->min = time;
+				stat->min_is_set = 1;
+			} else {
+				if (stat->min > time)
+					stat->min = time;
+			}
+
+			// update max
+			if (stat->max < time)
+				stat->max = time;
+
+			// remove self to parent
+			if (!g_queue_is_empty(fqueue)) {
+				printf("add children time to parent\n");
+				miniprof_print_queue(fqueue);
+				top = GPOINTER_TO_INT(g_queue_peek_tail(fqueue));
+				parent = get_ev(top);
+				stat = g_hash_table_lookup(symtable, parent->this_fn);
+				assert(stat != NULL);
+				stat->children += time;
+			}
+
 			printf("pop  %d\n", top);
 		}
 
